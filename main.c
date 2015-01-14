@@ -65,10 +65,8 @@ void imprimir_matriz(matriz *m){
 }
 
 matriz *multiplicar_matrices(matriz *a, matriz *b){
-	int p, semid, estado, hijos;
+	int p, semid, hijos;
 	matriz *c;
-
-	printf("%d,%d\n",a->columnas,b->filas);
 
 	if(a->columnas != b->filas){
 		printf("NEL. No es una multiplicación válida\n");
@@ -91,14 +89,47 @@ matriz *multiplicar_matrices(matriz *a, matriz *b){
 
 	for(p = 0; p < hijos; p++){
 		if(fork() == 0){
-			
+			int i, j, k;
+            struct sembuf operacion;
+ 
+            operacion.sem_flg = SEM_UNDO;
+ 
+            while(1){
+                operacion.sem_num = 0;
+                operacion.sem_op = -1;
+                semop(semid, &operacion, 1);
+ 
+                i = semctl(semid, 1, GETVAL, 0);
+                if(i > 0){
+
+                	j = semctl(semid, 2, GETVAL, 0);
+
+                	if(j < 1){
+                    	semctl(semid, 1, SETVAL, --i);
+                		j = c->columnas;
+                		semctl(semid, 2, SETVAL, j);
+                	}
+
+                	semctl(semid, 2, SETVAL, --j);
+
+                }
+                else
+                    exit(0);
+
+                printf("%d, %d\n", i, j);
+
+                for(k = 0; k < c->columnas; k++)
+                	c->coef[i-1][j-1] += a->coef[i][k] * b->coef[k][i];
+
+                operacion.sem_num = 0;
+                operacion.sem_op = 1;
+                semop(semid, &operacion, 1);
+
+            }
+				
 
 				}
 			}
-		}
-
-		for(p = 0; p < hijos; p++)
-			wait(&estado);
 
 		semctl(semid, 0, IPC_RMID, 0);
 		return c;
