@@ -103,16 +103,20 @@ matriz *multiplicar_matrices(matriz *a, matriz *b){
                 if(i > 0){
 
                 	j = semctl(semid, 2, GETVAL, 0);
-
-                	//printf("%d,%d\n", i,j);
-
                 	if(j > 0)
                 		semctl(semid, 2, SETVAL, --j);
-                	else
-                		semctl(semid, 2, SETVAL, --i);
+                	else{
+                		semctl(semid, 1, SETVAL, --i);
+                		j = c->columnas;
+                		semctl(semid, 2, SETVAL, j);
+                	}
                 }
                 else
                     exit(0);
+
+
+
+                	printf("%d,%d\n", i,j);
 
                 for(k = 0; k < c->columnas; k++)
                 	c->coef[i][j] += a->coef[i][k] * b->coef[k][i];
@@ -122,10 +126,8 @@ matriz *multiplicar_matrices(matriz *a, matriz *b){
                 semop(semid, &operacion, 1);
 
             }
-				
-
-				}
-			}
+		}
+	}
 
 			int estado;
 		for(p = 0; p < hijos; p++)
