@@ -5,47 +5,47 @@
 #include <sys/shm.h>
 #include <sys/sem.h>
 
-#define FILENAME "matrices"
+#define FILENAME "matrices_default"
 
 typedef struct{
 	int shmid;
-	int filas, columnas;
+	int m, n;
 	float **coef;
 }matriz;
 
-matriz *crear_matriz(int filas, int columnas){
+matriz *crearMatriz(int m, int n){
 	int shmid, i;
-	matriz *m;
+	matriz *a;
 
-	shmid = shmget (IPC_PRIVATE, sizeof(matriz) + filas * sizeof(float), 0600);
+	shmid = shmget (IPC_PRIVATE, sizeof(matriz) + m * sizeof(float), 0600);
 
 	if(shmid == -1){
-		perror("crear_matriz");
+		perror("crearMatriz");
 		exit(-1);
 	}
 
-	if( (m = (matriz *)shmat (shmid, 0, 0)) == (matriz *)-1){
-		perror("crear_matriz");
+	if( (a = (matriz *)shmat (shmid, 0, 0)) == (matriz *)-1){
+		perror("crearMatriz");
 		exit(-1);
 	}
 
-	m->shmid = shmid;
-	m->filas = filas;
-	m->columnas = columnas;
+	a->shmid = shmid;
+	a->m = m;
+	a->n = n;
 
-	m->coef = (float **)&m->coef + sizeof(float **);
-	for(i = 0; i < filas; i++)
-		m->coef[i] = (float *)&m->coef[filas] + i*columnas*sizeof(float);
+	a->coef = (float **)&a->coef + sizeof(float **);
+	for(i = 0; i < m; i++)
+		a->coef[i] = (float *)&a->coef[m] + i*n*sizeof(float);
 
-	return m;
+	return a;
 }
 
-matriz *leer_matriz(FILE *fp){
+matriz *cargarMatriz(FILE *fp){
 	int i, j, m, n;
 
 	fscanf(fp, "%d %d", &m, &n);
 
-	matriz *a = crear_matriz(m, n);
+	matriz *a = crearMatriz(m, n);
 
 	for(i = 0; i < m; i++)
 		for(j = 0; j < n; j++)
@@ -54,79 +54,86 @@ matriz *leer_matriz(FILE *fp){
 	return a;
 }
 
-void imprimir_matriz(matriz *m){
+void imprimirMatriz(matriz *m){
 	int i, j;
 
-	for(i = 0; i < m->filas; i++){
-		for(j = 0; j < m->columnas; j++)
+	for(i = 0; i < m->m; i++){
+		for(j = 0; j < m->n; j++)
 			printf("%g ", m->coef[i][j]);
 		printf("\n");
 	}
+	printf("\n");
 }
 
-matriz *multiplicar_matrices(matriz *a, matriz *b){
+matriz *multiplicarMatrices(matriz *a, matriz *b){
 	int p, semid, hijos;
 	matriz *c;
 
-	if(a->columnas != b->filas){
+	if(a->n != b->m){
 		printf("NEL. No es una multiplicación válida\n");
-		return NULL;
-	}
-
-	hijos = a->filas * b->columnas;
-
-	c = crear_matriz(a->filas, b->columnas);
-
-	semid = semget(IPC_PRIVATE, 3, 0600);
-	if(semid == -1){
-		perror("multiplicar_matrices");
 		exit(-1);
 	}
 
+	hijos = a->m * b->n;
+
+	c = crearMatriz(a->m, b->n);
+
+	semid = semget(IPC_PRIVATE, 3, 0600);
+	if(semid == -1){
+		perror("multiplicarMatrices");
+		exit(-1);
+	}
+
+	/*  
+		Dos semáforos para los señores coeficientes 
+		en estructuras flotantes,
+		uno para gobernarlos a todos.
+		un semaforo para encontrarlos.
+		un semaforo para atraerlos a todos y procesarlos
+		en la Región Crítica donde se extienden las sombras.
+
+	*/
+
 	semctl(semid, 0, SETVAL, 1);
 	semctl(semid, 1, SETVAL, 0);
-	semctl(semid, 2, SETVAL, c->columnas);
+	semctl(semid, 2, SETVAL, c->n);
 
 	printf("procesos: %d\n", hijos);
-	printf("filas: %d\n", c->filas);
-	printf("columnas: %d\n", c->columnas);
+	printf("filas: %d\n", c->m);
+	printf("columnas: %d\n", c->n);
 
 	for(p = 0; p < hijos; p++){
 		if(fork() == 0){
 			int i, j, k;
-            struct sembuf operacion;
+            struct sembuf dijkstra_dice;
  
-            operacion.sem_flg = SEM_UNDO;
+            dijkstra_dice.sem_flg = SEM_UNDO;
  
             while(1){
-                operacion.sem_num = 0;
-                operacion.sem_op = -1;
-                semop(semid, &operacion, 1);
+                dijkstra_dice.sem_num = 0;
+                dijkstra_dice.sem_op = -1;
+                semop(semid, &dijkstra_dice, 1);
  
                 i = semctl(semid, 1, GETVAL, 0);
-                if(i < c->filas){           
+                if(i < c->m){           
 	                j = semctl(semid, 2, GETVAL, 0);
 	                if(j > 0)
 	                	semctl(semid, 2, SETVAL, --j);
 	                else{
 	                	semctl(semid, 1, SETVAL, ++i);
-						semctl(semid, 2, SETVAL, c->columnas);                	
+						semctl(semid, 2, SETVAL, c->n);                	
 	                }
 	            }
 	            else
 	            	exit(-1);
 
-printf("%d,", i);
-printf("%d\n", j);
-
 				c->coef[i][j] = 0;
-
-                for(k = 0; k < a->columnas; k++)
+                for(k = 0; k < a->n; k++)
                 	c->coef[i][j] += a->coef[i][k] * b->coef[k][j];
 
-                operacion.sem_num = 0;
-                operacion.sem_op = 1;
-                semop(semid, &operacion, 1);
+                dijkstra_dice.sem_num = 0;
+                dijkstra_dice.sem_op = 1;
+                semop(semid, &dijkstra_dice, 1);
             }
 		}
 	}
@@ -139,39 +146,54 @@ printf("%d\n", j);
 		return c;
 }
 
-void escribir_matriz(matriz *a, FILE *fp){
+void escribirMatriz(matriz *a, FILE *fp){
 	int i, j;
 
-	fprintf(fp, "\n\n%d %d\n", a->filas, a->columnas);
+	fprintf(fp, "\n\n%d %d\n", a->m, a->n);
 
-	for(i = 0; i < a->filas; i++){
-		for(j = 0; j < a->columnas; j++)
+	for(i = 0; i < a->m; i++){
+		for(j = 0; j < a->n; j++)
 			fprintf(fp, "%g ", a->coef[i][j]);
 		fprintf(fp, "\n");
 	}
 }
 
-void destruir_matriz(matriz *m){
-	shmctl(m->shmid, IPC_RMID, 0);
+void destruyeMatriz(matriz *a){
+	shmctl(a->shmid, IPC_RMID, 0);
 }
 
 int main(int argc, char * argv[]){
-	int m,n;
 	FILE * fp;
+	char * fileString;
 
-	fp = fopen(FILENAME, "r+");
+	if(argc > 1)
+		fileString = argv[1];
+	else
+		fileString = FILENAME;
 
-	matriz *a = leer_matriz(fp);
-	matriz *b = leer_matriz(fp);
+	fp = fopen(fileString, "r+");
+	printf("Leyendo de archivo '%s'...\n", fileString);
 
-	matriz *c = multiplicar_matrices(a,b);
+	printf("Cargando matrices en memoria compartida...\n");
+	matriz *a = cargarMatriz(fp);
+	printf("Matriz A: \n");
+	imprimirMatriz(a);
 
-	imprimir_matriz(c);
-	escribir_matriz(c, fp);
+	printf("Matriz B: \n");
+	matriz *b = cargarMatriz(fp);
+	imprimirMatriz(b);
 
-	destruir_matriz(a);
-	destruir_matriz(b);
-	destruir_matriz(c);
+
+	matriz *c = multiplicarMatrices(a,b);
+	printf("Multiplicación exitosa. Escribiendo resultado en archivo '%s'...\n", fileString);
+	escribirMatriz(c, fp);
+	printf("Matriz AB: \n");
+	imprimirMatriz(c);
+
+	printf("Eliminando matrices de memoria compartida...\n");
+	destruyeMatriz(a);
+	destruyeMatriz(b);
+	destruyeMatriz(c);
 
 	fclose(fp);
 
