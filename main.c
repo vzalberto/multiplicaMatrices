@@ -84,12 +84,13 @@ matriz *multiplicar_matrices(matriz *a, matriz *b){
 	}
 
 	semctl(semid, 0, SETVAL, 1);
-	semctl(semid, 1, SETVAL, c->filas-1);
-	semctl(semid, 2, SETVAL, c->columnas-1);
+	semctl(semid, 1, SETVAL, 0);
+	semctl(semid, 2, SETVAL, c->columnas);
 
-	printf("%d,%d\n", c->filas-1, c->columnas-1);
-exit(0);
 	printf("procesos: %d\n", hijos);
+	printf("filas: %d\n", c->filas);
+	printf("columnas: %d\n", c->columnas);
+
 	for(p = 0; p < hijos; p++){
 		if(fork() == 0){
 			int i, j, k;
@@ -102,26 +103,30 @@ exit(0);
                 operacion.sem_op = -1;
                 semop(semid, &operacion, 1);
  
-                i = semctl(semid, 1, GETVAL, 0);printf("%d,", i);
-                j = semctl(semid, 2, GETVAL, 0);printf("%d\n", j);
+                i = semctl(semid, 1, GETVAL, 0);
+                if(i < c->filas){           
+	                j = semctl(semid, 2, GETVAL, 0);
+	                if(j > 0)
+	                	semctl(semid, 2, SETVAL, --j);
+	                else{
+	                	semctl(semid, 1, SETVAL, ++i);
+						semctl(semid, 2, SETVAL, c->columnas);                	
+	                }
+	            }
+	            else
+	            	exit(-1);
 
-                if(j < 0){
-                	j = c->columnas - 1;semctl(semid, 2, SETVAL, c->columnas-1);
+printf("%d,", i);
+printf("%d\n", j);
 
-	semctl(semid, 1, SETVAL, --i);
+				c->coef[i][j] = 0;
 
-                }
-                
-                for(k = 0; k < c->columnas; k++)
-                	c->coef[i][j] += a->coef[i][k] * b->coef[k][i];
-
-                semctl(semid, 1, SETVAL, --i);
-                semctl(semid, 2, SETVAL, --j);
+                for(k = 0; k < a->columnas; k++)
+                	c->coef[i][j] += a->coef[i][k] * b->coef[k][j];
 
                 operacion.sem_num = 0;
                 operacion.sem_op = 1;
                 semop(semid, &operacion, 1);
-
             }
 		}
 	}
