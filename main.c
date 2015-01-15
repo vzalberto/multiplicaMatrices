@@ -59,7 +59,7 @@ void imprimir_matriz(matriz *m){
 
 	for(i = 0; i < m->filas; i++){
 		for(j = 0; j < m->columnas; j++)
-			printf("%g", m->coef[i][j]);
+			printf("%g ", m->coef[i][j]);
 		printf("\n");
 	}
 }
@@ -104,22 +104,18 @@ matriz *multiplicar_matrices(matriz *a, matriz *b){
 
                 	j = semctl(semid, 2, GETVAL, 0);
 
-                	if(j < 1){
-                    	semctl(semid, 1, SETVAL, --i);
-                		j = c->columnas;
-                		semctl(semid, 2, SETVAL, j);
-                	}
+                	//printf("%d,%d\n", i,j);
 
-                	semctl(semid, 2, SETVAL, --j);
-
+                	if(j > 0)
+                		semctl(semid, 2, SETVAL, --j);
+                	else
+                		semctl(semid, 2, SETVAL, --i);
                 }
                 else
                     exit(0);
 
-                printf("%d, %d\n", i, j);
-
                 for(k = 0; k < c->columnas; k++)
-                	c->coef[i-1][j-1] += a->coef[i][k] * b->coef[k][i];
+                	c->coef[i][j] += a->coef[i][k] * b->coef[k][i];
 
                 operacion.sem_num = 0;
                 operacion.sem_op = 1;
@@ -130,6 +126,10 @@ matriz *multiplicar_matrices(matriz *a, matriz *b){
 
 				}
 			}
+
+			int estado;
+		for(p = 0; p < hijos; p++)
+			wait(&estado);
 
 		semctl(semid, 0, IPC_RMID, 0);
 		return c;
